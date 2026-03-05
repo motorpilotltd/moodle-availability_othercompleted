@@ -24,58 +24,85 @@
 
 namespace availability_othercompleted;
 
-defined('MOODLE_INTERNAL') || die();
-
+/**
+ * Front-end class for the other course completion condition.
+ *
+ * @package availability_othercompleted
+ * @copyright MU DOT MY PLT <support@mu.my>
+ * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 class frontend extends \core_availability\frontend {
     /**
      * @var array Cached init parameters
      */
-    protected $cacheparams = array();
+    protected $cacheparams = [];
 
     /**
-     * @var string IDs of course, cm, and section for cache (if any)
+     * @var string IDs of course and section for cache (if any)
      */
     protected $cachekey = '';
 
+    /**
+     * Returns the language strings needed by the JS.
+     *
+     * @return array Array of string keys.
+     */
     protected function get_javascript_strings() {
-        return array('option_complete', 'label_cm', 'label_completion');
+        return ['option_complete', 'option_incomplete', 'label_course', 'label_completion'];
     }
 
-    protected function get_javascript_init_params($course, \cm_info $cm = null,
-            \section_info $section = null) {
+    /**
+     * Returns the init parameters for the JS.
+     *
+     * @param \stdClass $course The course.
+     * @param \cm_info|null $cm The course module, if applicable.
+     * @param \section_info|null $section The section, if applicable.
+     * @return array The init parameters.
+     */
+    protected function get_javascript_init_params(
+        $course,
+        \cm_info $cm = null,
+        \section_info $section = null
+    ) {
         // Use cached result if available. The cache is just because we call it
         // twice (once from allow_add) so it's nice to avoid doing all the
         // print_string calls twice.
         $cachekey = $course->id . ',' . ($cm ? $cm->id : '') . ($section ? $section->id : '');
         if ($cachekey !== $this->cachekey) {
-            // Get list of activities on course which have completion values,
-            // to fill the dropdown.
             $context = \context_course::instance($course->id);
-            // get all course name
-            $datcms = array();
+            // Get all courses to fill the dropdown.
+            $courses = [];
             global $DB;
-            $sql2 = "SELECT * FROM {course} 
-                    ORDER BY fullname ASC";
-            $other = $DB->get_records_sql($sql2);
-            // $other = get_courses();
-            foreach ($other as $othercm) {
-                // disable not created course and default course
-                if(($othercm->category > 0) && ($othercm->id != $course->id)){
-                        $datcms[] = (object)array(
-                            'id' => $othercm->id,
-                            'name' => format_string($othercm->fullname, true, array('context' => $context))
-                            // 'completiongradeitemnumber' => $othercm->completiongradeitemnumber
-                        );
+            $sql = "SELECT * FROM {course} ORDER BY fullname ASC";
+            $allcourses = $DB->get_records_sql($sql);
+            foreach ($allcourses as $othercourse) {
+                // Exclude the site course and the current course.
+                if (($othercourse->category > 0) && ($othercourse->id != $course->id)) {
+                    $courses[] = (object)[
+                        'id' => $othercourse->id,
+                        'name' => format_string($othercourse->fullname, true, ['context' => $context]),
+                    ];
                 }
             }
             $this->cachekey = $cachekey;
-            $this->cacheinitparams = array($datcms);
+            $this->cacheparams = [$courses];
         }
-        return $this->cacheinitparams;
+        return $this->cacheparams;
     }
 
-    protected function allow_add($course, \cm_info $cm = null,
-            \section_info $section = null) {
+    /**
+     * Checks whether this condition can be added.
+     *
+     * @param \stdClass $course The course.
+     * @param \cm_info|null $cm The course module, if applicable.
+     * @param \section_info|null $section The section, if applicable.
+     * @return bool Whether the condition can be added.
+     */
+    protected function allow_add(
+        $course,
+        \cm_info $cm = null,
+        \section_info $section = null
+    ) {
         global $CFG;
 
         // Check if completion is enabled for the course.
@@ -85,7 +112,7 @@ class frontend extends \core_availability\frontend {
             return false;
         }
 
-        // Check if there's at least one other module with completion info.
+        // Check if there's at least one other course available.
         $params = $this->get_javascript_init_params($course, $cm, $section);
         return ((array)$params[0]) != false;
     }

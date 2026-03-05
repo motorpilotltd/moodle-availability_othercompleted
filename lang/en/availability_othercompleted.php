@@ -22,15 +22,15 @@
  * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-$string['description'] = 'Require students to complete other course .';
-$string['error_selectcmid'] = 'You must select an course for the completion condition.';
-$string['label_cm'] = 'Activity or resource';
+$string['description'] = 'Require students to complete other course.';
+$string['error_selectcourse'] = 'You must select a course for the completion condition.';
 $string['label_completion'] = 'Required completion status';
-$string['missing'] = '(Missing activity)';
+$string['label_course'] = 'Course';
+$string['missing'] = '(Missing course)';
 $string['option_complete'] = 'must be marked complete';
 $string['option_incomplete'] = 'must not be marked complete';
 $string['pluginname'] = 'Restriction by other course completion';
-$string['requires_incomplete'] = 'You have incompleted course <strong>{$a}</strong>';
-$string['requires_complete'] = 'You have completed course <strong>{$a}</strong>';
-$string['title'] = 'Other course completion';
 $string['privacy:metadata'] = 'The Restriction by other course completion plugin does not store any personal data.';
+$string['requires_complete'] = 'You have completed course <strong>{$a}</strong>';
+$string['requires_incomplete'] = 'You have not completed course <strong>{$a}</strong>';
+$string['title'] = 'Other course completion';

@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Activity other completion condition.
+ * Other course completion condition.
  *
  * @package availability_othercompleted
  * @copyright MU DOT MY PLT <support@mu.my>
@@ -24,18 +24,25 @@
 
 namespace availability_othercompleted;
 
+use base_logger;
+use base_task;
+
 defined('MOODLE_INTERNAL') || die();
 require_once($CFG->libdir . '/completionlib.php');
 
+/**
+ * Condition that requires completion of another course.
+ *
+ * @package availability_othercompleted
+ * @copyright MU DOT MY PLT <support@mu.my>
+ * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 class condition extends \core_availability\condition {
-    /** @var int ID of course that this depends on */
+    /** @var int ID of the course that this depends on */
     protected $courseid;
 
     /** @var int Expected completion type (one of the COMPLETE_xx constants) */
     protected $expectedcompletion;
-
-    /** @var array Array of modules used in these conditions for course */
-    protected static $modsusedincondition = array();
 
     /**
      * Constructor.
@@ -44,25 +51,37 @@ class condition extends \core_availability\condition {
      * @throws \coding_exception If invalid data structure.
      */
     public function __construct($structure) {
-        // Get courseid.
-        if (isset($structure->cm) && is_number($structure->cm)) {
-            $this->courseid = (int)$structure->cm;
+        // Get course ID.
+        if (isset($structure->course) && is_number($structure->course)) {
+            $this->courseid = (int)$structure->course;
         } else {
-            throw new \coding_exception('Missing or invalid ->cm for completion condition');
+            throw new \coding_exception('Missing or invalid ->course for completion condition');
         }
 
         // Get expected completion.
-        if (isset($structure->e) && in_array($structure->e,
-                array(COMPLETION_COMPLETE, COMPLETION_INCOMPLETE))) {
+        if (
+            isset($structure->e) && in_array(
+                $structure->e,
+                [COMPLETION_COMPLETE, COMPLETION_INCOMPLETE]
+            )
+        ) {
             $this->expectedcompletion = $structure->e;
         } else {
             throw new \coding_exception('Missing or invalid ->e for completion condition');
         }
     }
 
+    /**
+     * Saves the condition data.
+     *
+     * @return \stdClass The condition data.
+     */
     public function save() {
-        return (object)array('type' => 'othercompleted',
-                'course' => $this->courseid, 'e' => $this->expectedcompletion);
+        return (object)[
+            'type' => 'othercompleted',
+            'course' => $this->courseid,
+            'e' => $this->expectedcompletion,
+        ];
     }
 
     /**
@@ -71,27 +90,48 @@ class condition extends \core_availability\condition {
      * Intended for unit testing, as normally the JSON values are constructed
      * by JavaScript code.
      *
-     * @param int $courseid Course id of other activity
+     * @param int $courseid Course id of other course
      * @param int $expectedcompletion Expected completion value (COMPLETION_xx)
+     * @return \stdClass The JSON structure.
      */
     public static function get_json($courseid, $expectedcompletion) {
-        return (object)array('type' => 'othercompleted', 'course' => (int)$courseid,
-                'e' => (int)$expectedcompletion);
+        return (object)[
+            'type' => 'othercompleted',
+            'course' => (int)$courseid,
+            'e' => (int)$expectedcompletion,
+        ];
     }
 
+    /**
+     * Determines whether the condition is met.
+     *
+     * @param bool $not Whether the condition is negated.
+     * @param \core_availability\info $info The availability info.
+     * @param bool $grabthelot Whether to grab all data at once.
+     * @param int $userid The user ID.
+     * @return bool Whether the condition is met.
+     */
     public function is_available($not, \core_availability\info $info, $grabthelot, $userid) {
-        
         global $DB;
 
         $course = $this->courseid;
         $sqlcoursecomplete = "SELECT * FROM {course_completions} as a WHERE a.course = $course AND a.userid = $userid";
         $datacompletes = $DB->get_records_sql($sqlcoursecomplete);
-        $allow = false;
-        foreach($datacompletes as $datacomplete){
-
-            if($datacomplete->timecompleted>0){
-                $allow = true; 
+        $completed = false;
+        foreach ($datacompletes as $datacomplete) {
+            if ($datacomplete->timecompleted > 0) {
+                $completed = true;
             }
+        }
+
+        if ($this->expectedcompletion == COMPLETION_COMPLETE) {
+            $allow = $completed;
+        } else {
+            $allow = !$completed;
+        }
+
+        if ($not) {
+            $allow = !$allow;
         }
         return $allow;
     }
@@ -105,7 +145,7 @@ class condition extends \core_availability\condition {
      * @return string Readable keyword
      */
     protected static function get_lang_string_keyword($completionstate) {
-        switch($completionstate) {
+        switch ($completionstate) {
             case COMPLETION_INCOMPLETE:
                 return 'incomplete';
             case COMPLETION_COMPLETE:
@@ -115,15 +155,19 @@ class condition extends \core_availability\condition {
         }
     }
 
+    /**
+     * Returns a human-readable description of the condition.
+     *
+     * @param bool $full Whether to show the full description.
+     * @param bool $not Whether the condition is negated.
+     * @param \core_availability\info $info The availability info.
+     * @return string The description.
+     */
     public function get_description($full, $not, \core_availability\info $info) {
-        // Get name for module.
-        $modc = get_courses();
-
-        foreach ($modc as $modcs) {
-            if($modcs->id == $this->courseid){
-                $modname = $modcs->fullname;
-            }
-        }
+        global $DB;
+        // Get name for the course.
+        $course = $DB->get_record('course', ['id' => $this->courseid], 'id, fullname');
+        $modname = $course ? format_string($course->fullname) : get_string('missing', 'availability_othercompleted');
 
         // Work out which lang string to use.
         if ($not) {
@@ -143,16 +187,21 @@ class condition extends \core_availability\condition {
         } else {
             $str = 'requires_' . self::get_lang_string_keyword($this->expectedcompletion);
         }
-        
+
         return get_string($str, 'availability_othercompleted', $modname);
     }
 
+    /**
+     * Returns a debug string for this condition.
+     *
+     * @return string Debug string.
+     */
     protected function get_debug_string() {
         switch ($this->expectedcompletion) {
-            case COMPLETION_COMPLETE :
+            case COMPLETION_COMPLETE:
                 $type = 'COMPLETE';
                 break;
-            case COMPLETION_INCOMPLETE :
+            case COMPLETION_INCOMPLETE:
                 $type = 'INCOMPLETE';
                 break;
             default:
@@ -161,72 +210,18 @@ class condition extends \core_availability\condition {
         return 'course' . $this->courseid . ' ' . $type;
     }
 
-    public function include_after_restore($restoreid, $courseid, \base_logger $logger, $name, \base_task $task) {
-        global $DB;
-
-        if (!$DB->record_exists('course', ['id' => $this->courseid])) {
-            return false;
-        }
-        return true;
-    }
-
     /**
-     * Used in course/lib.php because we need to disable the completion JS if
-     * a completion value affects a conditional activity.
+     * Determines whether this condition should be included after a restore.
      *
-     * @param \stdClass $course Moodle course object
-     * @param int $cmid Course id
-     * @return bool True if this is used in a condition, false otherwise
+     * @param string $restoreid The restore ID.
+     * @param int $courseid The course ID.
+     * @param base_logger $logger The logger.
+     * @param string $name The name.
+     * @param base_task $task The task.
+     * @return bool Whether the condition should be included.
      */
-    public static function completion_value_used($course, $cmid) {
-        // Have we already worked out a list of required completion values
-        // for this course? If so just use that.
-        if (!array_key_exists($course->id, self::$modsusedincondition)) {
-            // We don't have data for this course, build it.
-            $modinfo = get_fast_modinfo($course);
-            self::$modsusedincondition[$course->id] = array();
-
-            // Activities.
-            // foreach ($modinfo->datcm as $othercm) {
-            foreach ($modinfo->cms as $othercm) {
-                if (is_null($othercm->availability)) {
-                    continue;
-                }
-                $ci = new \core_availability\info_module($othercm);
-                $tree = $ci->get_availability_tree();
-                foreach ($tree->get_all_children('availability_othercompleted\condition') as $cond) {
-                    self::$modsusedincondition[$course->id][$cond->courseid] = true;
-                }
-            }
-
-            // Sections.
-            foreach ($modinfo->get_section_info_all() as $section) {
-                if (is_null($section->availability)) {
-                    continue;
-                }
-                $ci = new \core_availability\info_section($section);
-                $tree = $ci->get_availability_tree();
-                foreach ($tree->get_all_children('availability_othercompleted\condition') as $cond) {
-                    self::$modsusedincondition[$course->id][$cond->courseid] = true;
-                }
-            }
-        }
-        return array_key_exists($cmid, self::$modsusedincondition[$course->id]);
-    }
-
-    /**
-     * Wipes the static cache of modules used in a condition (for unit testing).
-     */
-    public static function wipe_static_cache() {
-        self::$modsusedincondition = array();
-    }
-
-    public function update_dependency_id($table, $oldid, $newid) {
-        if ($table === 'course_modules' && (int)$this->courseid === (int)$oldid) {
-            $this->courseid = $newid;
-            return true;
-        } else {
-            return false;
-        }
+    public function include_after_restore($restoreid, $courseid, base_logger $logger, $name, base_task $task) {
+        global $DB;
+        return $DB->record_exists('course', ['id' => $this->courseid]);
     }
 }
